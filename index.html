@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Figma + Form Split View</title>
+  <style>
+    :root{
+      --divider: 8px;
+      --min-pane: 240px;
+      --bg: #0b0c10;
+      --panel: #11131a;
+      --stroke: rgba(255,255,255,.12);
+      --text: rgba(255,255,255,.9);
+    }
+
+    html, body {
+      height: 100%;
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    }
+
+    .app {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--stroke);
+      background: rgba(255,255,255,.03);
+      font-size: 14px;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      justify-content: space-between;
+    }
+    header .hint { opacity: .8; }
+
+    .split {
+      position: relative;
+      flex: 1;
+      min-height: 0; /* important for iframes to size correctly in flex layouts */
+      display: grid;
+      grid-template-columns: 1fr var(--divider) 1fr;
+    }
+
+    .pane {
+      min-width: var(--min-pane);
+      min-height: 0;
+      background: var(--panel);
+      border-right: 1px solid var(--stroke);
+      overflow: hidden;
+    }
+    .pane.right { border-right: none; border-left: 1px solid var(--stroke); }
+
+    iframe {
+      width: 100%;
+      height: 100%;
+      border: 0;
+      display: block;
+      background: #fff;
+    }
+
+    .gutter {
+      cursor: col-resize;
+      background: rgba(255,255,255,.06);
+      position: relative;
+      user-select: none;
+      touch-action: none; /* enables better pointer handling on touch devices */
+    }
+    .gutter::after{
+      content:"";
+      position:absolute;
+      top: 50%;
+      left: 50%;
+      width: 2px;
+      height: 44px;
+      transform: translate(-50%,-50%);
+      background: rgba(255,255,255,.35);
+      border-radius: 2px;
+    }
+    .gutter:hover { background: rgba(255,255,255,.10); }
+
+    /* Small screens: stack vertically */
+    @media (max-width: 900px) {
+      .split {
+        grid-template-columns: 1fr;
+        grid-template-rows: 1fr var(--divider) 1fr;
+      }
+      .gutter { cursor: row-resize; }
+      .pane { border-right: none; border-bottom: 1px solid var(--stroke); }
+      .pane.right { border-left: none; border-top: 1px solid var(--stroke); border-bottom: none; }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="app">
+    <header>
+      <div>Split view</div>
+      <div class="hint">Drag the divider to resize • Double-click divider to reset</div>
+    </header>
+
+    <main id="split" class="split" aria-label="Resizable split panes">
+      <section class="pane left" aria-label="Figma">
+        <iframe
+          title="Figma Prototype"
+          src="https://www.figma.com/embed?embed_host=share&url=https://www.figma.com/proto/x4S11UYKsaPTRBrRcHvsA1/HasTok?page-id=81%3A2593&node-id=81-2640&viewport=-1031%2C553%2C0.22&t=kMIPn6mbKhahAMZ2-1&scaling=scale-down&content-scaling=fixed"
+          allowfullscreen>
+        </iframe>
+      </section>
+
+      <div id="gutter" class="gutter" role="separator" aria-orientation="vertical"
+           aria-label="Resize panels" tabindex="0"></div>
+
+      <section class="pane right" aria-label="Microsoft Form">
+        <iframe
+          title="Microsoft Form"
+          src="https://forms.cloud.microsoft/r/b5E1xAt7mj?origin=lprLink">
+        </iframe>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    (function () {
+      const split = document.getElementById('split');
+      const gutter = document.getElementById('gutter');
+
+      const DEFAULT = 50; // left %
+
+      function isStacked() {
+        const cols = getComputedStyle(split).gridTemplateColumns.trim();
+        return cols.split(' ').length === 1;
+      }
+
+      function clamp(n, min, max) { return Math.max(min, Math.min(max, n)); }
+
+      function setRatio(percent) {
+        const p = clamp(percent, 10, 90);
+        if (!isStacked()) {
+          split.style.gridTemplateColumns = `${p}fr var(--divider) ${100 - p}fr`;
+          gutter.setAttribute('aria-orientation', 'vertical');
+        } else {
+          split.style.gridTemplateRows = `${p}fr var(--divider) ${100 - p}fr`;
+          gutter.setAttribute('aria-orientation', 'horizontal');
+        }
+        localStorage.setItem('split_ratio', String(p));
+      }
+
+      const saved = Number(localStorage.getItem('split_ratio'));
+      setRatio(Number.isFinite(saved) && saved > 0 ? saved : DEFAULT);
+
+      gutter.addEventListener('dblclick', () => setRatio(DEFAULT));
+
+      let dragging = false;
+
+      function pointerToRatio(e) {
+        const rect = split.getBoundingClientRect();
+        if (!isStacked()) {
+          const x = e.clientX - rect.left;
+          return (x / rect.width) * 100;
+        } else {
+          const y = e.clientY - rect.top;
+          return (y / rect.height) * 100;
+        }
+      }
+
+      gutter.addEventListener('pointerdown', (e) => {
+        dragging = true;
+        gutter.setPointerCapture(e.pointerId);
+        document.body.style.cursor = isStacked() ? 'row-resize' : 'col-resize';
+        document.body.style.userSelect = 'none';
+      });
+
+      gutter.addEventListener('pointermove', (e) => {
+        if (!dragging) return;
+        setRatio(pointerToRatio(e));
+      });
+
+      function endDrag() {
+        dragging = false;
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+      }
+
+      gutter.addEventListener('pointerup', endDrag);
+      gutter.addEventListener('pointercancel', endDrag);
+
+      gutter.addEventListener('keydown', (e) => {
+        const step = e.shiftKey ? 5 : 2;
+        const current = Number(localStorage.getItem('split_ratio')) || DEFAULT;
+
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+          e.preventDefault();
+          setRatio(current - step);
+        } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+          e.preventDefault();
+          setRatio(current + step);
+        } else if (e.key === 'Home') {
+          e.preventDefault();
+          setRatio(10);
+        } else if (e.key === 'End') {
+          e.preventDefault();
+          setRatio(90);
+        } else if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          setRatio(DEFAULT);
+        }
+      });
+
+      window.addEventListener('resize', () => {
+        const current = Number(localStorage.getItem('split_ratio')) || DEFAULT;
+        setRatio(current);
+      });
+    })();
+  </script>
+</body>
+</html>
